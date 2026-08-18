@@ -1,501 +1,389 @@
-const state = {
-  view: "dashboard",
-  symbol: "SPY",
-  prices: [],
-  watch: ["SPY", "QQQ", "NVDA", "AAPL", "BTC-USD"]
-};
+/* =========================================================
+   QUANTFORGE APP
+   UI + QUANT TOOLS
+   Requires:
+   <script src="quant-tools.js"></script>
+   <script src="app.js"></script>
+   ========================================================= */
 
-const navItems = [
-  ["OVERVIEW", "⌂", "dashboard", "Dashboard"],
-  ["MARKET", "◈", "markets", "Markets"],
-  ["QUANT", "∿", "quant", "Quant Lab"],
-  ["STRATEGIES", "◫", "strategies", "Strategy Lab"],
-  ["BACKTEST", "↗", "backtest", "Backtesting"],
-  ["RISK", "◉", "risk", "Risk Engine"],
-  ["PORTFOLIO", "▦", "portfolio", "Portfolio"],
-  ["ALERTS", "◌", "alerts", "Signals & Alerts"],
-  ["LEARN", "?", "learn", "Learn Mode"]
-];
+"use strict";
 
-const modules = [
-  ["Statistical Arbitrage", "⇄", "Find mean-reverting relationships using spread, z-score, correlation and cointegration."],
-  ["Kelly Criterion", "K", "Calculate position sizing from win probability and payoff."],
-  ["Black-Scholes", "B", "Estimate option value and basic Greeks."],
-  ["Monte Carlo", "M", "Stress-test a strategy across thousands of simulated paths."],
-  ["Engle-Granger", "EG", "Test whether two assets have a useful long-run relationship."],
-  ["Markov Regime Model", "MR", "Classify market regimes and estimate transition probabilities."],
-  ["Sentiment Analyzer", "S", "Turn news sentiment into a measurable market factor."],
-  ["Multi-Factor Model", "MF", "Rank assets using momentum, value, quality and volatility."],
-  ["BAB", "β", "Compare low-beta and high-beta exposure."],
-  ["Asymmetric Bets", "↗", "Search for setups with favorable upside versus downside."],
-  ["Correlation Heatmap", "▤", "Map diversification and hidden concentration."],
-  ["Insider Tracker", "I", "Track insider activity and convert it into a signal."]
-];
+/* =========================================================
+   HELPERS
+   ========================================================= */
+
+function $(id) {
+  return document.getElementById(id);
+}
 
 function el(id) {
   return document.getElementById(id);
 }
 
-function nav() {
-  const target = el("nav");
-  if (!target) return;
+function escapeHTML(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
 
-  let previousSection = "";
+function formatNumber(value, decimals = 2) {
+  if (!Number.isFinite(Number(value))) {
+    return "—";
+  }
 
-  target.innerHTML = navItems.map(item => {
-    const [section, icon, view, label] = item;
-
-    let html = "";
-
-    if (section !== previousSection) {
-      html += `<div class="section">${section}</div>`;
-      previousSection = section;
+  return Number(value).toLocaleString(
+    "en-US",
+    {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
     }
-
-    html += `
-      <button class="${state.view === view ? "active" : ""}"
-              onclick="go('${view}')">
-        <b>${icon}</b>${label}
-      </button>
-    `;
-
-    return html;
-  }).join("");
-}
-
-function go(view) {
-  state.view = view;
-  render();
-  window.scrollTo({ top: 0, behavior: "smooth" });
-}
-
-function toast(message) {
-  const target = el("toast");
-
-  if (!target) {
-    console.log(message);
-    return;
-  }
-
-  target.textContent = message;
-  target.classList.add("show");
-
-  setTimeout(() => {
-    target.classList.remove("show");
-  }, 2200);
-}
-
-function money(value) {
-  return Number(value).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
-}
-
-function randn() {
-  let u = 0;
-  let v = 0;
-
-  while (u === 0) u = Math.random();
-  while (v === 0) v = Math.random();
-
-  return Math.sqrt(-2 * Math.log(u)) *
-    Math.cos(2 * Math.PI * v);
-}
-
-function seedPrices(count = 220, start = 630) {
-  let price = start;
-  const prices = [];
-
-  for (let i = 0; i < count; i++) {
-    price *= Math.exp(
-      0.00035 + 0.018 * randn()
-    );
-
-    prices.push(price);
-  }
-
-  return prices;
-}
-
-function livePrices() {
-  if (!state.prices.length) {
-    state.prices = seedPrices();
-    return;
-  }
-
-  const last = state.prices[state.prices.length - 1];
-
-  const next = last * Math.exp(
-    0.00015 + 0.0035 * randn()
   );
-
-  state.prices.push(next);
-
-  if (state.prices.length > 260) {
-    state.prices.shift();
-  }
 }
 
-function drawChart(id, data) {
-  const canvas = el(id);
-
-  if (!canvas || !data || data.length < 2) {
-    return;
-  }
-
-  const rect = canvas.getBoundingClientRect();
-
-  const width = Math.max(rect.width, 10);
-  const height = Math.max(rect.height, 10);
-
-  const dpr = window.devicePixelRatio || 1;
-
-  canvas.width = width * dpr;
-  canvas.height = height * dpr;
-
-  const ctx = canvas.getContext("2d");
-
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, width, height);
-
-  const padding = 10;
-
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const span = max - min || 1;
-
-  ctx.strokeStyle = "#17263a";
-  ctx.lineWidth = 1;
-
-  for (let i = 1; i < 5; i++) {
-    const y =
-      padding +
-      (height - padding * 2) * i / 5;
-
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(width, y);
-    ctx.stroke();
-  }
-
-  ctx.beginPath();
-
-  data.forEach((value, index) => {
-    const x =
-      padding +
-      (width - padding * 2) *
-      index /
-      Math.max(data.length - 1, 1);
-
-    const y =
-      height -
-      padding -
-      ((value - min) / span) *
-      (height - padding * 2);
-
-    if (index === 0) {
-      ctx.moveTo(x, y);
-    } else {
-      ctx.lineTo(x, y);
-    }
-  });
-
-  ctx.strokeStyle = "#3b82f6";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-}
-
-function stat(title, value, change, label, positive = null) {
-  let cls = "";
-
-  if (positive === true) cls = "positive";
-  if (positive === false) cls = "negative";
-
-  return `
-    <div class="card">
-      <div class="stat-label">${title}</div>
-      <div class="stat-value">${value}</div>
-      <div class="stat-foot ${cls}">
-        ${change} · ${label}
-      </div>
-    </div>
-  `;
-}
-
-function ticker(symbol, factor, signal, confidence) {
-  return `
-    <div class="ticker-row">
-      <div class="ticker">
-        ${symbol}
-        <small>${factor}</small>
-      </div>
-
-      <div>${confidence}</div>
-
-      <div>
-        <span class="signal ${signal.toLowerCase()}">
-          ${signal}
-        </span>
-      </div>
-
-      <div>
-        <div class="bar">
-          <i style="width:${parseInt(confidence, 10)}%"></i>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function riskbar(label, value) {
-  return `
-    <div class="progress-row">
-      <span>${label}</span>
-      <div class="bar">
-        <i style="width:${value}%"></i>
-      </div>
-      <b>${value}</b>
-    </div>
-  `;
+function formatPercent(value, decimals = 2) {
+  return (
+    formatNumber(Number(value) * 100, decimals) +
+    "%"
+  );
 }
 
 function metric(label, value) {
   return `
     <div class="metric">
-      <span>${label}</span>
-      <b>${value}</b>
+      <div class="metric-label">
+        ${escapeHTML(label)}
+      </div>
+
+      <div class="metric-value">
+        ${escapeHTML(value)}
+      </div>
     </div>
   `;
 }
 
-function dashboard() {
-  const price =
-    state.prices[state.prices.length - 1] || 630;
+function toast(message) {
+  let node = document.querySelector(
+    ".qf-toast"
+  );
 
-  const first =
-    state.prices[0] || price;
+  if (!node) {
+    node = document.createElement("div");
 
-  const day =
-    ((price / first) - 1) * 100;
+    node.className = "qf-toast";
 
-  return `
-    <div class="page-head">
-      <div>
-        <div class="eyebrow">
-          Quant terminal /
-          ${new Date().toLocaleTimeString("pl-PL")}
-        </div>
+    node.style.cssText = `
+      position:fixed;
+      left:50%;
+      bottom:24px;
+      transform:translateX(-50%);
+      z-index:9999;
+      padding:12px 16px;
+      border-radius:12px;
+      background:#111827;
+      color:#fff;
+      font-size:13px;
+      box-shadow:0 10px 30px rgba(0,0,0,.25);
+      max-width:calc(100vw - 30px);
+      text-align:center;
+    `;
 
-        <h1>Market Intelligence</h1>
+    document.body.appendChild(node);
+  }
 
-        <div class="sub">
-          One workspace for research, strategies, risk and execution decisions.
-        </div>
-      </div>
+  node.textContent = message;
+  node.style.display = "block";
 
-      <div class="actions">
-        <button class="btn"
-          onclick="go('strategies')">
-          ＋ New strategy
-        </button>
+  clearTimeout(
+    node._timer
+  );
 
-        <button class="btn primary"
-          onclick="go('quant')">
-          Run quant scan
-        </button>
-      </div>
-    </div>
-
-    <div class="grid stats">
-      ${stat(
-        "Portfolio",
-        "$124,860",
-        "+2.84%",
-        "30D",
-        true
-      )}
-
-      ${stat(
-        "SPY",
-        money(price),
-        day.toFixed(2) + "%",
-        "simulated live",
-        day >= 0
-      )}
-
-      ${stat(
-        "Risk score",
-        "32 / 100",
-        "Moderate",
-        "portfolio"
-      )}
-
-      ${stat(
-        "Sharpe",
-        "1.74",
-        "+0.31",
-        "vs benchmark",
-        true
-      )}
-
-      ${stat(
-        "Regime",
-        "Risk-on",
-        "68% confidence",
-        "Markov",
-        true
-      )}
-    </div>
-
-    <div class="grid dashboard-grid">
-
-      <div class="card chart-card">
-
-        <div class="card-title">
-          <b>${state.symbol} · Live price engine</b>
-          <span>
-            simulated feed
-          </span>
-        </div>
-
-        <div class="chart-wrap">
-          <canvas id="mainChart"></canvas>
-        </div>
-
-        <div class="legend">
-          <span>Price</span>
-          <span>1m · 5m · 1h · 1D</span>
-          <span>Broker adapter ready</span>
-        </div>
-
-      </div>
-
-      <div class="card">
-
-        <div class="card-title">
-          <b>Quant Signals</b>
-          <span>updated now</span>
-        </div>
-
-        ${ticker(
-          "NVDA",
-          "Momentum",
-          "BUY",
-          "91%"
-        )}
-
-        ${ticker(
-          "SPY",
-          "Regime",
-          "BUY",
-          "78%"
-        )}
-
-        ${ticker(
-          "QQQ",
-          "Mean reversion",
-          "WATCH",
-          "61%"
-        )}
-
-        ${ticker(
-          "AAPL",
-          "Factor score",
-          "BUY",
-          "74%"
-        )}
-
-        ${ticker(
-          "BTC-USD",
-          "Volatility",
-          "SELL",
-          "68%"
-        )}
-
-      </div>
-
-    </div>
-
-    <div
-      class="grid two"
-      style="margin-top:13px"
-    >
-
-      <div class="card">
-
-        <div class="card-title">
-          <b>Portfolio risk</b>
-          <span>risk engine</span>
-        </div>
-
-        ${riskbar("Market beta", 72)}
-        ${riskbar("Volatility", 43)}
-        ${riskbar("Concentration", 61)}
-        ${riskbar("Drawdown", 27)}
-        ${riskbar("Liquidity", 88)}
-
-      </div>
-
-      <div class="card">
-
-        <div class="card-title">
-          <b>Decision assistant</b>
-          <span>quant analysis</span>
-        </div>
-
-        <div class="hero-signal">
-
-          <span class="tag">
-            CURRENT SETUP
-          </span>
-
-          <div class="big positive">
-            WAIT / SCALE IN
-          </div>
-
-          <div class="sub">
-            SPY · 78% confidence
-          </div>
-
-        </div>
-
-        <div
-          class="explain"
-          style="margin-top:10px"
-        >
-          Positive regime and momentum, but volatility is elevated.
-          The engine suggests staged sizing and a predefined invalidation level.
-        </div>
-
-      </div>
-
-    </div>
-  `;
+  node._timer = setTimeout(
+    () => {
+      node.style.display = "none";
+    },
+    2200
+  );
 }
 
-function markets() {
-  return `
+function parseSeries(value) {
+  return String(value)
+    .split(/[,\s;]+/)
+    .map(Number)
+    .filter(Number.isFinite);
+}
+
+/* =========================================================
+   MODULES
+   ========================================================= */
+
+const modules = [
+  [
+    "Statistical Arbitrage",
+    "Pairs, spreads and Z-score analysis"
+  ],
+
+  [
+    "Kelly Criterion",
+    "Optimal position sizing"
+  ],
+
+  [
+    "Black-Scholes",
+    "Options pricing and Greeks"
+  ],
+
+  [
+    "Monte Carlo",
+    "Probabilistic market simulation"
+  ],
+
+  [
+    "Engle-Granger",
+    "Cointegration analysis"
+  ],
+
+  [
+    "Markov Regime",
+    "Market regime detection"
+  ],
+
+  [
+    "Sentiment",
+    "Market sentiment analysis"
+  ],
+
+  [
+    "Multi-Factor",
+    "Factor-based asset scoring"
+  ],
+
+  [
+    "BAB",
+    "Betting Against Beta"
+  ],
+
+  [
+    "Asymmetric Bets",
+    "Expected value and reward/risk"
+  ],
+
+  [
+    "Correlation",
+    "Asset correlation analysis"
+  ],
+
+  [
+    "Insider Tracker",
+    "Insider activity analysis"
+  ]
+];
+
+/* =========================================================
+   NAVIGATION
+   ========================================================= */
+
+function go(page) {
+
+  if (page === "quant") {
+    renderQuantLab();
+    return;
+  }
+
+  if (page === "dashboard") {
+    renderDashboard();
+    return;
+  }
+
+  if (page === "risk") {
+    renderRiskEngine();
+    return;
+  }
+
+  if (page === "backtest") {
+    renderBacktest();
+    return;
+  }
+
+  if (page === "strategy") {
+    renderStrategyLab();
+    return;
+  }
+
+  renderDashboard();
+}
+
+/* =========================================================
+   DASHBOARD
+   ========================================================= */
+
+function renderDashboard() {
+
+  const view =
+    $("view");
+
+  if (!view) return;
+
+  view.innerHTML = `
     <div class="page-head">
 
       <div>
         <div class="eyebrow">
-          Market data
+          QUANTFORGE
         </div>
 
-        <h1>Markets</h1>
+        <h1>
+          Quant Dashboard
+        </h1>
 
         <div class="sub">
-          Watchlist, market regime and simulated price engine.
+          Research, risk and systematic strategy engine.
         </div>
       </div>
 
       <div class="actions">
         <button
           class="btn primary"
-          onclick="toast('Data provider adapter ready')"
+          onclick="renderQuantLab()"
         >
-          Connect data provider
+          Quant Lab
+        </button>
+
+        <button
+          class="btn"
+          onclick="renderRiskEngine()"
+        >
+          Risk
+        </button>
+      </div>
+
+    </div>
+
+    <div class="grid stats">
+
+      <div class="card">
+        ${metric(
+          "Market regime",
+          "NEUTRAL"
+        )}
+      </div>
+
+      <div class="card">
+        ${metric(
+          "Portfolio volatility",
+          "12.4%"
+        )}
+      </div>
+
+      <div class="card">
+        ${metric(
+          "Sharpe ratio",
+          "1.42"
+        )}
+      </div>
+
+      <div class="card">
+        ${metric(
+          "Drawdown",
+          "-6.8%"
+        )}
+      </div>
+
+    </div>
+
+    <div class="grid two">
+
+      <div class="card">
+
+        <div class="card-title">
+          <b>System status</b>
+          <span>LIVE ENGINE</span>
+        </div>
+
+        <div class="explain">
+          QuantTools engine loaded:
+          ${
+            window.QuantTools
+              ? "YES"
+              : "NO"
+          }
+        </div>
+
+      </div>
+
+      <div class="card">
+
+        <div class="card-title">
+          <b>Quick actions</b>
+        </div>
+
+        <div class="actions">
+
+          <button
+            class="btn"
+            onclick="kellyTool()"
+          >
+            Kelly
+          </button>
+
+          <button
+            class="btn"
+            onclick="blackScholesTool()"
+          >
+            Options
+          </button>
+
+          <button
+            class="btn"
+            onclick="monteCarloTool()"
+          >
+            Monte Carlo
+          </button>
+
+        </div>
+
+      </div>
+
+    </div>
+  `;
+}
+
+/* =========================================================
+   QUANT LAB
+   ========================================================= */
+
+function renderQuantLab() {
+
+  const view =
+    $("view");
+
+  if (!view) return;
+
+  view.innerHTML = `
+    <div class="page-head">
+
+      <div>
+        <div class="eyebrow">
+          RESEARCH
+        </div>
+
+        <h1>
+          Quant Lab
+        </h1>
+
+        <div class="sub">
+          Quantitative models and research tools.
+        </div>
+      </div>
+
+      <div class="actions">
+        <button
+          class="btn"
+          onclick="renderDashboard()"
+        >
+          Dashboard
         </button>
       </div>
 
@@ -503,178 +391,120 @@ function markets() {
 
     <div class="grid two">
 
-      <div class="card chart-card">
-
-        <div class="card-title">
-          <b>SPY</b>
-          <span>simulated feed</span>
-        </div>
-
-        <div class="chart-wrap">
-          <canvas id="marketChart"></canvas>
-        </div>
-
-      </div>
-
-      <div class="card">
-
-        <div class="card-title">
-          <b>Watchlist</b>
-          <span>5 assets</span>
-        </div>
-
-        ${state.watch.map((symbol, index) => {
-
-          const types = [
-            "Equity ETF",
-            "Tech ETF",
-            "Semiconductor",
-            "Mega cap",
-            "Crypto"
-          ];
-
-          const negative = index === 4;
-
-          const change = negative
-            ? "-1.21%"
-            : "+" + (1.2 + index * 0.31).toFixed(2) + "%";
-
-          return `
-            <div class="ticker-row">
-
-              <div class="ticker">
-                ${symbol}
-                <small>${types[index]}</small>
-              </div>
-
-              <div class="${negative ? "negative" : "positive"}">
-                ${change}
-              </div>
-
-              <div>
-                <span class="signal ${negative ? "sell" : "buy"}">
-                  ${negative ? "SELL" : "BUY"}
-                </span>
-              </div>
-
-            </div>
-          `;
-
-        }).join("")}
-
-      </div>
-
-    </div>
-
-    <div
-      class="grid three"
-      style="margin-top:13px"
-    >
-
-      ${stat(
-        "Trend strength",
-        "74%",
-        "Strong",
-        "20/50/200 MA",
-        true
-      )}
-
-      ${stat(
-        "Volatility",
-        "38%",
-        "Moderate",
-        "30D"
-      )}
-
-      ${stat(
-        "Market breadth",
-        "66%",
-        "Positive",
-        "advance/decline",
-        true
-      )}
-
-    </div>
-  `;
-}
-
-function quant() {
-  return `
-    <div class="page-head">
-
-      <div>
-        <div class="eyebrow">
-          Research engine
-        </div>
-
-        <h1>Quant Lab</h1>
-
-        <div class="sub">
-          Quantitative models with explanations.
-        </div>
-      </div>
-
-    </div>
-
-    <div class="grid module-grid">
-
-      ${modules.map((module, index) => {
-
-        return `
+      ${modules.map(
+        (module, index) => `
           <div
             class="card module"
             onclick="openModule(${index})"
+            style="cursor:pointer"
           >
 
-            <div class="module-icon">
-              ${module[1]}
+            <div class="card-title">
+              <b>
+                ${escapeHTML(module[0])}
+              </b>
+
+              <span>
+                TOOL
+              </span>
             </div>
 
-            <h3>
-              ${module[0]}
-            </h3>
+            <div class="explain">
+              ${escapeHTML(module[1])}
+            </div>
 
-            <p>
-              ${module[2]}
-            </p>
-
-            <span class="open">
-              Open module →
-            </span>
+            <div
+              style="
+                margin-top:14px;
+                opacity:.65;
+                font-size:12px;
+              "
+            >
+              Open analysis →
+            </div>
 
           </div>
-        `;
-
-      }).join("")}
+        `
+      ).join("")}
 
     </div>
   `;
 }
 
+/* =========================================================
+   OPEN MODULE
+   ========================================================= */
+
 function openModule(index) {
-  const module = modules[index];
 
-  toast(module[0] + " opened");
+  const toolMap = {
 
-  console.log(
-    "Quant module:",
-    module[0]
+    0: statisticalArbitrageTool,
+
+    1: kellyTool,
+
+    2: blackScholesTool,
+
+    3: monteCarloTool,
+
+    4: engleGrangerTool,
+
+    5: markovTool,
+
+    6: sentimentTool,
+
+    7: factorTool,
+
+    8: babTool,
+
+    9: asymmetricTool,
+
+    10: correlationTool,
+
+    11: insiderTool
+  };
+
+  if (
+    toolMap[index]
+  ) {
+    toolMap[index]();
+    return;
+  }
+
+  toast(
+    "Tool unavailable."
   );
 }
 
-function strategies() {
-  return `
+/* =========================================================
+   TOOL SHELL
+   ========================================================= */
+
+function toolShell(
+  title,
+  description,
+  content
+) {
+
+  const view =
+    $("view");
+
+  if (!view) return;
+
+  view.innerHTML = `
     <div class="page-head">
 
       <div>
         <div class="eyebrow">
-          Strategy development
+          QUANT LAB
         </div>
 
-        <h1>Strategy Lab</h1>
+        <h1>
+          ${escapeHTML(title)}
+        </h1>
 
         <div class="sub">
-          Define and analyze a trading strategy.
+          ${escapeHTML(description)}
         </div>
       </div>
 
@@ -682,16 +512,9 @@ function strategies() {
 
         <button
           class="btn"
-          onclick="toast('Strategy saved locally')"
+          onclick="renderQuantLab()"
         >
-          Save
-        </button>
-
-        <button
-          class="btn primary"
-          onclick="go('backtest')"
-        >
-          Backtest strategy
+          ← Quant Lab
         </button>
 
       </div>
@@ -699,71 +522,67 @@ function strategies() {
     </div>
 
     <div class="grid two">
+      ${content}
+    </div>
+  `;
+}
 
+/* =========================================================
+   KELLY
+   ========================================================= */
+
+function kellyTool() {
+
+  toolShell(
+    "Kelly Criterion",
+    "Position sizing based on probability and payoff.",
+    `
       <div class="card">
 
         <div class="card-title">
-          <b>Strategy definition</b>
-          <span>plain English</span>
+          <b>Strategy inputs</b>
+          <span>Kelly sizing</span>
         </div>
 
-        <div class="field">
-
-          <label>
-            Describe your strategy
-          </label>
-
-          <textarea id="strategyText">
-Buy when 20-day momentum is positive and RSI is below 65.
-Reduce position when volatility rises above its 30-day median.
-Exit if drawdown exceeds 8%.
-          </textarea>
-
-        </div>
-
-        <div
-          class="input-grid"
-          style="margin-top:10px"
-        >
+        <div class="input-grid">
 
           <div class="field">
-
             <label>
-              Asset
+              Win probability %
             </label>
 
             <input
-              value="SPY"
-              id="asset"
-            />
-
-          </div>
-
-          <div class="field">
-
-            <label>
-              Timeframe
-            </label>
-
-            <select>
-              <option>1D</option>
-              <option>4H</option>
-              <option>1H</option>
-            </select>
-
-          </div>
-
-          <div class="field">
-
-            <label>
-              Initial capital
-            </label>
-
-            <input
-              value="100000"
+              id="kt-win"
               type="number"
-            />
+              value="55"
+              step="0.1"
+            >
+          </div>
 
+          <div class="field">
+            <label>
+              Average win %
+            </label>
+
+            <input
+              id="kt-win-size"
+              type="number"
+              value="4"
+              step="0.1"
+            >
+          </div>
+
+          <div class="field">
+            <label>
+              Average loss %
+            </label>
+
+            <input
+              id="kt-loss-size"
+              type="number"
+              value="2.5"
+              step="0.1"
+            >
           </div>
 
         </div>
@@ -771,9 +590,9 @@ Exit if drawdown exceeds 8%.
         <button
           class="btn primary"
           style="margin-top:12px"
-          onclick="analyzeStrategy()"
+          onclick="calculateKellyTool()"
         >
-          Analyze strategy
+          Calculate
         </button>
 
       </div>
@@ -781,81 +600,81 @@ Exit if drawdown exceeds 8%.
       <div class="card">
 
         <div class="card-title">
-          <b>Strategy score</b>
-          <span>quant checklist</span>
+          <b>Result</b>
         </div>
 
-        <div
-          id="strategyResult"
-          class="result"
-        >
-
-          <div class="metric-grid">
-
-            ${metric(
-              "Robustness",
-              "8.1/10"
-            )}
-
-            ${metric(
-              "Complexity",
-              "Low"
-            )}
-
-            ${metric(
-              "Risk",
-              "Moderate"
-            )}
-
-            ${metric(
-              "Leakage",
-              "None detected"
-            )}
-
-          </div>
-
-          <div
-            class="explain"
-            style="margin-top:14px"
-          >
-            Before using real money, validate the strategy out-of-sample,
-            with walk-forward testing, transaction costs and Monte Carlo stress tests.
-          </div>
-
+        <div id="kt-result">
+          Enter your strategy statistics.
         </div>
 
       </div>
-
-    </div>
-  `;
+    `
+  );
 }
 
-function analyzeStrategy() {
-  const result = el("strategyResult");
+function calculateKellyTool() {
 
-  if (!result) return;
+  const result =
+    QuantTools.kelly({
 
-  result.innerHTML = `
+      winRate:
+        Number(
+          $("kt-win").value
+        ) / 100,
+
+      averageWin:
+        Number(
+          $("kt-win-size").value
+        ) / 100,
+
+      averageLoss:
+        Number(
+          $("kt-loss-size").value
+        ) / 100
+
+    });
+
+  if (result.error) {
+
+    $("kt-result").innerHTML =
+      `<div class="explain">
+        ${escapeHTML(result.error)}
+      </div>`;
+
+    return;
+  }
+
+  $("kt-result").innerHTML = `
+
     <div class="metric-grid">
 
       ${metric(
-        "Robustness",
-        "8.4/10"
+        "Full Kelly",
+        formatPercent(
+          result.fullKelly
+        )
       )}
 
       ${metric(
-        "Expected CAGR",
-        "14.8%"
+        "Half Kelly",
+        formatPercent(
+          result.halfKelly
+        )
       )}
 
       ${metric(
-        "Max DD",
-        "-11.6%"
+        "Quarter Kelly",
+        formatPercent(
+          result.quarterKelly
+        )
       )}
 
       ${metric(
-        "Sharpe",
-        "1.63"
+        "Payoff ratio",
+        formatNumber(
+          result.payoffRatio,
+          2
+        ) + "x"
       )}
 
     </div>
@@ -864,211 +683,1119 @@ function analyzeStrategy() {
       class="explain"
       style="margin-top:14px"
     >
-      <b>Quant interpretation:</b>
-      The strategy has a coherent trend and risk overlay.
-      The main danger is parameter overfitting.
-      Next step is walk-forward validation and sensitivity analysis.
-    </div>
-  `;
-
-  toast("Strategy analyzed");
-}
-
-function backtest() {
-  return `
-    <div class="page-head">
-
-      <div>
-        <div class="eyebrow">
-          Historical simulation
-        </div>
-
-        <h1>Backtesting</h1>
-
-        <div class="sub">
-          Test a strategy before exposing capital to it.
-        </div>
-      </div>
-
-      <button
-        class="btn primary"
-        onclick="runBacktest()"
-      >
-        ▶ Run backtest
-      </button>
-
-    </div>
-
-    <div class="card">
-
-      <div class="input-grid">
-
-        <div class="field">
-
-          <label>
-            Strategy
-          </label>
-
-          <select>
-            <option>
-              Momentum + volatility filter
-            </option>
-
-            <option>
-              Mean reversion pairs
-            </option>
-
-            <option>
-              Custom strategy
-            </option>
-
-          </select>
-
-        </div>
-
-        <div class="field">
-
-          <label>
-            Period
-          </label>
-
-          <select>
-            <option>
-              2018 — 2026
-            </option>
-
-            <option>
-              2022 — 2026
-            </option>
-
-            <option>
-              2025 — 2026
-            </option>
-
-          </select>
-
-        </div>
-
-        <div class="field">
-
-          <label>
-            Fees + slippage
-          </label>
-
-          <input value="0.08%" />
-
-        </div>
-
-      </div>
-
-    </div>
-
-    <div
-      id="backtestResult"
-      style="margin-top:13px"
-    >
-
-      <div class="grid metric-grid">
-
-        ${metric("CAGR", "—")}
-        ${metric("Sharpe", "—")}
-        ${metric("Max DD", "—")}
-        ${metric("Win rate", "—")}
-
-      </div>
-
+      Fractional Kelly reduces sensitivity to estimation error.
+      Full Kelly can produce very aggressive allocations.
     </div>
   `;
 }
 
-function runBacktest() {
-  const result = el("backtestResult");
+/* =========================================================
+   BLACK-SCHOLES
+   ========================================================= */
 
-  if (!result) return;
+function blackScholesTool() {
 
-  const cagr =
-    (4 + Math.random() * 16).toFixed(1);
+  toolShell(
+    "Black-Scholes",
+    "Options pricing and Greeks.",
+    `
+      <div class="card">
 
-  const sharpe =
-    (1.1 + Math.random()).toFixed(2);
-
-  const drawdown =
-    (-8 - Math.random() * 8).toFixed(1);
-
-  const winrate =
-    (52 + Math.random() * 14).toFixed(1);
-
-  result.innerHTML = `
-    <div class="grid metric-grid">
-
-      ${metric(
-        "CAGR",
-        cagr + "%"
-      )}
-
-      ${metric(
-        "Sharpe",
-        sharpe
-      )}
-
-      ${metric(
-        "Max DD",
-        drawdown + "%"
-      )}
-
-      ${metric(
-        "Win rate",
-        winrate + "%"
-      )}
-
-    </div>
-
-    <div
-      class="card"
-      style="margin-top:13px"
-    >
-
-      <div class="explain">
-
-        <b>Validation:</b>
-        This is a demonstration backtest using generated data.
-        Production mode must use real historical market data,
-        transaction costs, spread and slippage.
-
-      </div>
-
-    </div>
-  `;
-
-  toast("Backtest complete");
-}
-
-function risk() {
-  return `
-    <div class="page-head">
-
-      <div>
-        <div class="eyebrow">
-          Risk management
+        <div class="card-title">
+          <b>Option parameters</b>
         </div>
 
-        <h1>Risk Engine</h1>
+        <div class="input-grid">
 
-        <div class="sub">
-          Position sizing and portfolio risk.
+          <div class="field">
+            <label>
+              Underlying price
+            </label>
+
+            <input
+              id="bs-spot"
+              type="number"
+              value="100"
+            >
+          </div>
+
+          <div class="field">
+            <label>
+              Strike
+            </label>
+
+            <input
+              id="bs-strike"
+              type="number"
+              value="100"
+            >
+          </div>
+
+          <div class="field">
+            <label>
+              Risk-free rate %
+            </label>
+
+            <input
+              id="bs-rate"
+              type="number"
+              value="4"
+            >
+          </div>
+
+          <div class="field">
+            <label>
+              Volatility %
+            </label>
+
+            <input
+              id="bs-vol"
+              type="number"
+              value="25"
+            >
+          </div>
+
+          <div class="field">
+            <label>
+              Time to expiry
+            </label>
+
+            <input
+              id="bs-time"
+              type="number"
+              value="1"
+            >
+          </div>
+
+          <div class="field">
+
+            <label>
+              Type
+            </label>
+
+            <select id="bs-type">
+
+              <option value="call">
+                Call
+              </option>
+
+              <option value="put">
+                Put
+              </option>
+
+            </select>
+
+          </div>
+
         </div>
+
+        <button
+          class="btn primary"
+          style="margin-top:12px"
+          onclick="calculateBlackScholes()"
+        >
+          Calculate
+        </button>
+
       </div>
-
-    </div>
-
-    <div class="grid two">
 
       <div class="card">
 
         <div class="card-title">
-          <b>Kelly position sizing</b>
-          <span>fractional Kelly recommended</span>
+          <b>Greeks</b>
         </div>
+
+        <div id="bs-result">
+          Enter parameters.
+        </div>
+
+      </div>
+    `
+  );
+}
+
+function calculateBlackScholes() {
+
+  const result =
+    QuantTools.blackScholes({
+
+      spot:
+        Number(
+          $("bs-spot").value
+        ),
+
+      strike:
+        Number(
+          $("bs-strike").value
+        ),
+
+      rate:
+        Number(
+          $("bs-rate").value
+        ) / 100,
+
+      volatility:
+        Number(
+          $("bs-vol").value
+        ) / 100,
+
+      time:
+        Number(
+          $("bs-time").value
+        ),
+
+      type:
+        $("bs-type").value
+    });
+
+  if (result.error) {
+
+    $("bs-result").innerHTML =
+      `<div class="explain">
+        ${escapeHTML(result.error)}
+      </div>`;
+
+    return;
+  }
+
+  $("bs-result").innerHTML = `
+
+    <div class="metric-grid">
+
+      ${metric(
+        "Option price",
+        formatNumber(
+          result.price,
+          4
+        )
+      )}
+
+      ${metric(
+        "Delta",
+        formatNumber(
+          result.delta,
+          4
+        )
+      )}
+
+      ${metric(
+        "Gamma",
+        formatNumber(
+          result.gamma,
+          6
+        )
+      )}
+
+      ${metric(
+        "Vega",
+        formatNumber(
+          result.vega,
+          4
+        )
+      )}
+
+      ${metric(
+        "Theta",
+        formatNumber(
+          result.theta,
+          4
+        )
+      )}
+
+    </div>
+  `;
+}
+
+/* =========================================================
+   MONTE CARLO
+   ========================================================= */
+
+function monteCarloTool() {
+
+  toolShell(
+    "Monte Carlo",
+    "Simulate possible future price paths.",
+    `
+      <div class="card">
+
+        <div class="card-title">
+          <b>Simulation parameters</b>
+        </div>
+
+        <div class="input-grid">
+
+          <div class="field">
+            <label>
+              Initial price
+            </label>
+
+            <input
+              id="mc-price"
+              type="number"
+              value="100"
+            >
+          </div>
+
+          <div class="field">
+            <label>
+              Expected return %
+            </label>
+
+            <input
+              id="mc-drift"
+              type="number"
+              value="8"
+            >
+          </div>
+
+          <div class="field">
+            <label>
+              Volatility %
+            </label>
+
+            <input
+              id="mc-vol"
+              type="number"
+              value="20"
+            >
+          </div>
+
+          <div class="field">
+            <label>
+              Years
+            </label>
+
+            <input
+              id="mc-years"
+              type="number"
+              value="1"
+            >
+          </div>
+
+          <div class="field">
+            <label>
+              Simulations
+            </label>
+
+            <input
+              id="mc-sim"
+              type="number"
+              value="5000"
+              min="100"
+              max="50000"
+            >
+          </div>
+
+        </div>
+
+        <button
+          class="btn primary"
+          style="margin-top:12px"
+          onclick="calculateMonteCarlo()"
+        >
+          Run simulation
+        </button>
+
+      </div>
+
+      <div class="card">
+
+        <div class="card-title">
+          <b>Simulation result</b>
+        </div>
+
+        <div id="mc-result">
+          No simulation executed.
+        </div>
+
+      </div>
+    `
+  );
+}
+
+function calculateMonteCarlo() {
+
+  const result =
+    QuantTools.monteCarlo({
+
+      initialPrice:
+        Number(
+          $("mc-price").value
+        ),
+
+      drift:
+        Number(
+          $("mc-drift").value
+        ) / 100,
+
+      volatility:
+        Number(
+          $("mc-vol").value
+        ) / 100,
+
+      years:
+        Number(
+          $("mc-years").value
+        ),
+
+      simulations:
+        Number(
+          $("mc-sim").value
+        )
+
+    });
+
+  $("mc-result").innerHTML = `
+
+    <div class="metric-grid">
+
+      ${metric(
+        "Expected price",
+        formatNumber(
+          result.expectedPrice
+        )
+      )}
+
+      ${metric(
+        "Probability of profit",
+        formatPercent(
+          result.probabilityOfProfit
+        )
+      )}
+
+      ${metric(
+        "Simulations",
+        result.simulations.toLocaleString()
+      )}
+
+    </div>
+
+    <div
+      class="explain"
+      style="margin-top:14px"
+    >
+      Monte Carlo estimates a distribution under the
+      selected assumptions. It is not a prediction engine.
+    </div>
+  `;
+}
+
+/* =========================================================
+   STATISTICAL ARBITRAGE
+   ========================================================= */
+
+function statisticalArbitrageTool() {
+
+  toolShell(
+    "Statistical Arbitrage",
+    "Pairs trading and spread analysis.",
+    `
+      <div class="card">
+
+        <div class="field">
+
+          <label>
+            Series A
+          </label>
+
+          <textarea id="sa-a">100,101,102,101,103,105,104,106,107,108</textarea>
+
+        </div>
+
+        <div
+          class="field"
+          style="margin-top:10px"
+        >
+
+          <label>
+            Series B
+          </label>
+
+          <textarea id="sa-b">50,50.5,51,50.8,51.5,52,52.1,52.5,53,53.2</textarea>
+
+        </div>
+
+        <button
+          class="btn primary"
+          style="margin-top:12px"
+          onclick="calculateStatArb()"
+        >
+          Analyze
+        </button>
+
+      </div>
+
+      <div class="card">
+
+        <div
+          class="card-title"
+        >
+          <b>Spread analysis</b>
+        </div>
+
+        <div id="sa-result">
+          No analysis.
+        </div>
+
+      </div>
+    `
+  );
+}
+
+function calculateStatArb() {
+
+  const result =
+    QuantTools.statisticalArbitrage({
+
+      seriesA:
+        parseSeries(
+          $("sa-a").value
+        ),
+
+      seriesB:
+        parseSeries(
+          $("sa-b").value
+        )
+
+    });
+
+  if (result.error) {
+
+    $("sa-result").innerHTML =
+      `<div class="explain">
+        ${escapeHTML(result.error)}
+      </div>`;
+
+    return;
+  }
+
+  $("sa-result").innerHTML = `
+
+    <div class="metric-grid">
+
+      ${metric(
+        "Hedge ratio",
+        formatNumber(
+          result.hedgeRatio,
+          4
+        )
+      )}
+
+      ${metric(
+        "Spread mean",
+        formatNumber(
+          result.mean,
+          4
+        )
+      )}
+
+      ${metric(
+        "Spread σ",
+        formatNumber(
+          result.standardDeviation,
+          4
+        )
+      )}
+
+      ${metric(
+        "Z-score",
+        formatNumber(
+          result.zScore,
+          3
+        )
+      )}
+
+      ${metric(
+        "Signal",
+        result.signal
+      )}
+
+    </div>
+  `;
+}
+
+/* =========================================================
+   ENGLE-GRANGER
+   ========================================================= */
+
+function engleGrangerTool() {
+
+  toolShell(
+    "Engle-Granger",
+    "Regression-based relationship analysis.",
+    `
+      <div class="card">
+
+        <div class="field">
+
+          <label>
+            Series A
+          </label>
+
+          <textarea id="eg-a">100,101,102,103,104,106,107,108,110,111</textarea>
+
+        </div>
+
+        <div
+          class="field"
+          style="margin-top:10px"
+        >
+
+          <label>
+            Series B
+          </label>
+
+          <textarea id="eg-b">50,50.5,51,51.5,52,53,53.5,54,55,55.5</textarea>
+
+        </div>
+
+        <button
+          class="btn primary"
+          style="margin-top:12px"
+          onclick="calculateEG()"
+        >
+          Run analysis
+        </button>
+
+      </div>
+
+      <div class="card">
+
+        <div id="eg-result">
+          No result.
+        </div>
+
+      </div>
+    `
+  );
+}
+
+function calculateEG() {
+
+  const result =
+    QuantTools.engleGranger(
+
+      parseSeries(
+        $("eg-a").value
+      ),
+
+      parseSeries(
+        $("eg-b").value
+      )
+
+    );
+
+  if (result.error) {
+
+    $("eg-result").innerHTML =
+      `<div class="explain">
+        ${escapeHTML(result.error)}
+      </div>`;
+
+    return;
+  }
+
+  $("eg-result").innerHTML = `
+
+    <div class="metric-grid">
+
+      ${metric(
+        "Hedge ratio",
+        formatNumber(
+          result.hedgeRatio,
+          4
+        )
+      )}
+
+      ${metric(
+        "R²",
+        formatNumber(
+          result.rSquared,
+          4
+        )
+      )}
+
+      ${metric(
+        "Residual σ",
+        formatNumber(
+          result.residualStd,
+          4
+        )
+      )}
+
+    </div>
+
+    <div
+      class="explain"
+      style="margin-top:14px"
+    >
+      ${escapeHTML(
+        result.interpretation
+      )}
+    </div>
+  `;
+}
+
+/* =========================================================
+   MARKOV REGIME
+   ========================================================= */
+
+function markovTool() {
+
+  toolShell(
+    "Markov Regime",
+    "Classify the current market regime.",
+    `
+      <div class="card">
+
+        <div class="field">
+
+          <label>
+            Returns %
+          </label>
+
+          <textarea id="mk-data">1.2,0.8,-0.3,1.4,0.9,1.1,-0.2,-1.1,-0.8,0.3,1.5,0.7</textarea>
+
+        </div>
+
+        <button
+          class="btn primary"
+          style="margin-top:12px"
+          onclick="calculateMarkov()"
+        >
+          Detect regime
+        </button>
+
+      </div>
+
+      <div class="card">
+
+        <div id="mk-result">
+          No regime detected.
+        </div>
+
+      </div>
+    `
+  );
+}
+
+function calculateMarkov() {
+
+  const returns =
+    parseSeries(
+      $("mk-data").value
+    ).map(
+      value =>
+        value / 100
+    );
+
+  const result =
+    QuantTools.markovRegime(
+      returns
+    );
+
+  if (result.error) {
+
+    $("mk-result").innerHTML =
+      `<div class="explain">
+        ${escapeHTML(result.error)}
+      </div>`;
+
+    return;
+  }
+
+  $("mk-result").innerHTML = `
+
+    <div class="metric-grid">
+
+      ${metric(
+        "Regime",
+        result.regime
+      )}
+
+      ${metric(
+        "Bull probability",
+        formatPercent(
+          result.probabilities.bull
+        )
+      )}
+
+      ${metric(
+        "Neutral probability",
+        formatPercent(
+          result.probabilities.neutral
+        )
+      )}
+
+      ${metric(
+        "Bear probability",
+        formatPercent(
+          result.probabilities.bear
+        )
+      )}
+
+    </div>
+  `;
+}
+
+/* =========================================================
+   SENTIMENT
+   ========================================================= */
+
+function sentimentTool() {
+
+  toolShell(
+    "Sentiment",
+    "Simple sentiment scoring interface.",
+    `
+      <div class="card">
+
+        <div class="field">
+
+          <label>
+            Sentiment score
+            (-1 to +1)
+          </label>
+
+          <input
+            id="sentiment-score"
+            type="number"
+            value="0.65"
+            min="-1"
+            max="1"
+            step="0.05"
+          >
+
+        </div>
+
+        <button
+          class="btn primary"
+          style="margin-top:12px"
+          onclick="calculateSentiment()"
+        >
+          Analyze
+        </button>
+
+      </div>
+
+      <div class="card">
+
+        <div id="sentiment-result">
+          Enter sentiment.
+        </div>
+
+      </div>
+    `
+  );
+}
+
+function calculateSentiment() {
+
+  const score =
+    Number(
+      $("sentiment-score").value
+    );
+
+  let signal =
+    "NEUTRAL";
+
+  if (score > 0.3) {
+    signal =
+      "BULLISH";
+  }
+
+  if (score < -0.3) {
+    signal =
+      "BEARISH";
+  }
+
+  $("sentiment-result").innerHTML = `
+
+    <div class="metric-grid">
+
+      ${metric(
+        "Score",
+        formatNumber(
+          score,
+          2
+        )
+      )}
+
+      ${metric(
+        "Signal",
+        signal
+      )}
+
+    </div>
+  `;
+}
+
+/* =========================================================
+   MULTI FACTOR
+   ========================================================= */
+
+function factorTool() {
+
+  toolShell(
+    "Multi-Factor Model",
+    "Combine factor scores into a ranking score.",
+    `
+      <div class="card">
+
+        <div class="input-grid">
+
+          <div class="field">
+            <label>Momentum</label>
+            <input
+              id="factor-momentum"
+              type="number"
+              value="0.5"
+              min="-1"
+              max="1"
+              step="0.1"
+            >
+          </div>
+
+          <div class="field">
+            <label>Value</label>
+            <input
+              id="factor-value"
+              type="number"
+              value="0.4"
+              min="-1"
+              max="1"
+              step="0.1"
+            >
+          </div>
+
+          <div class="field">
+            <label>Quality</label>
+            <input
+              id="factor-quality"
+              type="number"
+              value="0.6"
+              min="-1"
+              max="1"
+              step="0.1"
+            >
+          </div>
+
+          <div class="field">
+            <label>Volatility</label>
+            <input
+              id="factor-volatility"
+              type="number"
+              value="0.2"
+              min="-1"
+              max="1"
+              step="0.1"
+            >
+          </div>
+
+          <div class="field">
+            <label>Size</label>
+            <input
+              id="factor-size"
+              type="number"
+              value="0.1"
+              min="-1"
+              max="1"
+              step="0.1"
+            >
+          </div>
+
+        </div>
+
+        <button
+          class="btn primary"
+          style="margin-top:12px"
+          onclick="calculateFactors()"
+        >
+          Calculate
+        </button>
+
+      </div>
+
+      <div class="card">
+
+        <div id="factor-result">
+          No score.
+        </div>
+
+      </div>
+    `
+  );
+}
+
+function calculateFactors() {
+
+  const result =
+    QuantTools.factorScore({
+
+      momentum:
+        Number(
+          $("factor-momentum").value
+        ),
+
+      value:
+        Number(
+          $("factor-value").value
+        ),
+
+      quality:
+        Number(
+          $("factor-quality").value
+        ),
+
+      volatility:
+        Number(
+          $("factor-volatility").value
+        ),
+
+      size:
+        Number(
+          $("factor-size").value
+        )
+    });
+
+  $("factor-result").innerHTML = `
+
+    <div class="metric-grid">
+
+      ${metric(
+        "Raw score",
+        formatNumber(
+          result.score,
+          3
+        )
+      )}
+
+      ${metric(
+        "Normalized",
+        formatNumber(
+          result.normalized,
+          1
+        ) + "/100"
+      )}
+
+    </div>
+  `;
+}
+
+/* =========================================================
+   BAB
+   ========================================================= */
+
+function babTool() {
+
+  toolShell(
+    "BAB",
+    "Betting Against Beta framework.",
+    `
+      <div class="card">
+
+        <div class="input-grid">
+
+          <div class="field">
+
+            <label>
+              Low-beta return %
+            </label>
+
+            <input
+              id="bab-low"
+              type="number"
+              value="9"
+            >
+
+          </div>
+
+          <div class="field">
+
+            <label>
+              High-beta return %
+            </label>
+
+            <input
+              id="bab-high"
+              type="number"
+              value="7"
+            >
+
+          </div>
+
+        </div>
+
+        <button
+          class="btn primary"
+          style="margin-top:12px"
+          onclick="calculateBAB()"
+        >
+          Compare
+        </button>
+
+      </div>
+
+      <div class="card">
+
+        <div id="bab-result">
+          No result.
+        </div>
+
+      </div>
+    `
+  );
+}
+
+function calculateBAB() {
+
+  const low =
+    Number(
+      $("bab-low").value
+    );
+
+  const high =
+    Number(
+      $("bab-high").value
+    );
+
+  const spread =
+    low - high;
+
+  $("bab-result").innerHTML = `
+
+    <div class="metric-grid">
+
+      ${metric(
+        "BAB spread",
+        formatNumber(
+          spread,
+          2
+        ) + "%"
+      )}
+
+      ${metric(
+        "Signal",
+        spread > 0
+          ? "LOW BETA FAVORED"
+          : "HIGH BETA FAVORED"
+      )}
+
+    </div>
+  `;
+}
+
+/* =========================================================
+   ASYMMETRIC BETS
+   ========================================================= */
+
+function asymmetricTool() {
+
+  toolShell(
+    "Asymmetric Bets",
+    "Expected value and reward/risk analysis.",
+    `
+      <div class="card">
 
         <div class="input-grid">
 
@@ -1079,35 +1806,38 @@ function risk() {
             </label>
 
             <input
-              id="win"
+              id="ab-p"
+              type="number"
               value="55"
-            />
+            >
 
           </div>
 
           <div class="field">
 
             <label>
-              Average win %
+              Upside %
             </label>
 
             <input
-              id="aw"
-              value="4"
-            />
+              id="ab-up"
+              type="number"
+              value="10"
+            >
 
           </div>
 
           <div class="field">
 
             <label>
-              Average loss %
+              Downside %
             </label>
 
             <input
-              id="al"
-              value="2.5"
-            />
+              id="ab-down"
+              type="number"
+              value="5"
+            >
 
           </div>
 
@@ -1116,29 +1846,546 @@ function risk() {
         <button
           class="btn primary"
           style="margin-top:12px"
-          onclick="calcKelly()"
+          onclick="calculateAsymmetric()"
         >
           Calculate
         </button>
 
-        <div
-          id="kelly"
+      </div>
+
+      <div class="card">
+
+        <div id="ab-result">
+          No result.
+        </div>
+
+      </div>
+    `
+  );
+}
+
+function calculateAsymmetric() {
+
+  const result =
+    QuantTools.asymmetricBet({
+
+      winProbability:
+        Number(
+          $("ab-p").value
+        ) / 100,
+
+      upside:
+        Number(
+          $("ab-up").value
+        ),
+
+      downside:
+        Number(
+          $("ab-down").value
+        )
+    });
+
+  $("ab-result").innerHTML = `
+
+    <div class="metric-grid">
+
+      ${metric(
+        "Expected value",
+        formatNumber(
+          result.expectedValue,
+          2
+        ) + "%"
+      )}
+
+      ${metric(
+        "Risk / reward",
+        formatNumber(
+          result.riskReward,
+          2
+        ) + "x"
+      )}
+
+      ${metric(
+        "Edge",
+        result.edge
+      )}
+
+    </div>
+  `;
+}
+
+/* =========================================================
+   CORRELATION
+   ========================================================= */
+
+function correlationTool() {
+
+  toolShell(
+    "Correlation",
+    "Measure the relationship between two assets.",
+    `
+      <div class="card">
+
+        <div class="field">
+
+          <label>
+            Asset A
+          </label>
+
+          <textarea id="cor-a">1,2,3,4,5,6,7,8,9,10</textarea>
+
+        </div>
+
+        <div class="field">
+
+          <label>
+            Asset B
+          </label>
+
+          <textarea id="cor-b">2,4,5,7,8,11,12,15,16,19</textarea>
+
+        </div>
+
+        <button
+          class="btn primary"
           style="margin-top:12px"
-        ></div>
+          onclick="calculateCorrelation()"
+        >
+          Calculate
+        </button>
+
+      </div>
+
+      <div class="card">
+
+        <div id="cor-result">
+          No result.
+        </div>
+
+      </div>
+    `
+  );
+}
+
+function calculateCorrelation() {
+
+  const a =
+    parseSeries(
+      $("cor-a").value
+    );
+
+  const b =
+    parseSeries(
+      $("cor-b").value
+    );
+
+  const result =
+    QuantTools.correlation(
+      a,
+      b
+    );
+
+  $("cor-result").innerHTML = `
+
+    <div class="metric-grid">
+
+      ${metric(
+        "Correlation",
+        formatNumber(
+          result,
+          4
+        )
+      )}
+
+      ${metric(
+        "Relationship",
+        result > 0.7
+          ? "STRONG POSITIVE"
+          : result < -0.7
+            ? "STRONG NEGATIVE"
+            : "WEAK / MODERATE"
+      )}
+
+    </div>
+  `;
+}
+
+/* =========================================================
+   INSIDER
+   ========================================================= */
+
+function insiderTool() {
+
+  toolShell(
+    "Insider Tracker",
+    "Convert insider activity into a simple signal.",
+    `
+      <div class="card">
+
+        <div class="input-grid">
+
+          <div class="field">
+
+            <label>
+              Insider buys
+            </label>
+
+            <input
+              id="ins-buy"
+              type="number"
+              value="8"
+            >
+
+          </div>
+
+          <div class="field">
+
+            <label>
+              Insider sells
+            </label>
+
+            <input
+              id="ins-sell"
+              type="number"
+              value="2"
+            >
+
+          </div>
+
+        </div>
+
+        <button
+          class="btn primary"
+          style="margin-top:12px"
+          onclick="calculateInsider()"
+        >
+          Analyze
+        </button>
+
+      </div>
+
+      <div class="card">
+
+        <div id="ins-result">
+          No result.
+        </div>
+
+      </div>
+    `
+  );
+}
+
+function calculateInsider() {
+
+  const buys =
+    Number(
+      $("ins-buy").value
+    );
+
+  const sells =
+    Number(
+      $("ins-sell").value
+    );
+
+  const total =
+    buys + sells;
+
+  const score =
+    total === 0
+      ? 0
+      : (buys - sells) /
+        total;
+
+  let signal =
+    "NEUTRAL";
+
+  if (score > 0.25) {
+    signal =
+      "BULLISH";
+  }
+
+  if (score < -0.25) {
+    signal =
+      "BEARISH";
+  }
+
+  $("ins-result").innerHTML = `
+
+    <div class="metric-grid">
+
+      ${metric(
+        "Insider score",
+        formatNumber(
+          score,
+          2
+        )
+      )}
+
+      ${metric(
+        "Signal",
+        signal
+      )}
+
+    </div>
+  `;
+}
+
+/* =========================================================
+   RISK ENGINE
+   ========================================================= */
+
+function renderRiskEngine() {
+
+  const view =
+    $("view");
+
+  if (!view) return;
+
+  view.innerHTML = `
+
+    <div class="page-head">
+
+      <div>
+
+        <div class="eyebrow">
+          PORTFOLIO
+        </div>
+
+        <h1>
+          Risk Engine
+        </h1>
+
+        <div class="sub">
+          Volatility-based position sizing.
+        </div>
+
+      </div>
+
+      <div class="actions">
+
+        <button
+          class="btn"
+          onclick="renderDashboard()"
+        >
+          Dashboard
+        </button>
+
+      </div>
+
+    </div>
+
+    <div class="grid two">
+
+      <div class="card">
+
+        <div class="input-grid">
+
+          <div class="field">
+
+            <label>
+              Portfolio value
+            </label>
+
+            <input
+              id="risk-portfolio"
+              type="number"
+              value="100000"
+            >
+
+          </div>
+
+          <div class="field">
+
+            <label>
+              Target volatility %
+            </label>
+
+            <input
+              id="risk-target"
+              type="number"
+              value="10"
+            >
+
+          </div>
+
+          <div class="field">
+
+            <label>
+              Asset volatility %
+            </label>
+
+            <input
+              id="risk-asset"
+              type="number"
+              value="20"
+            >
+
+          </div>
+
+        </div>
+
+        <button
+          class="btn primary"
+          style="margin-top:12px"
+          onclick="calculateRisk()"
+        >
+          Calculate sizing
+        </button>
+
+      </div>
+
+      <div class="card">
+
+        <div id="risk-result">
+          Enter portfolio parameters.
+        </div>
+
+      </div>
+
+    </div>
+  `;
+}
+
+function calculateRisk() {
+
+  const result =
+    QuantTools.volatilitySizing({
+
+      portfolioValue:
+        Number(
+          $("risk-portfolio").value
+        ),
+
+      targetVolatility:
+        Number(
+          $("risk-target").value
+        ) / 100,
+
+      assetVolatility:
+        Number(
+          $("risk-asset").value
+        ) / 100
+    });
+
+  if (result.error) {
+
+    $("risk-result").innerHTML =
+      `<div class="explain">
+        ${escapeHTML(result.error)}
+      </div>`;
+
+    return;
+  }
+
+  $("risk-result").innerHTML = `
+
+    <div class="metric-grid">
+
+      ${metric(
+        "Allocation",
+        formatPercent(
+          result.allocation
+        )
+      )}
+
+      ${metric(
+        "Position value",
+        formatNumber(
+          result.positionValue,
+          2
+        )
+      )}
+
+    </div>
+  `;
+}
+
+/* =========================================================
+   STRATEGY LAB
+   ========================================================= */
+
+function renderStrategyLab() {
+
+  const view =
+    $("view");
+
+  if (!view) return;
+
+  view.innerHTML = `
+
+    <div class="page-head">
+
+      <div>
+
+        <div class="eyebrow">
+          STRATEGY
+        </div>
+
+        <h1>
+          Strategy Lab
+        </h1>
+
+        <div class="sub">
+          Build and evaluate quantitative ideas.
+        </div>
+
+      </div>
+
+      <div class="actions">
+
+        <button
+          class="btn"
+          onclick="renderQuantLab()"
+        >
+          Quant Lab
+        </button>
+
+      </div>
+
+    </div>
+
+    <div class="grid two">
+
+      <div class="card">
+
+        <div class="card-title">
+          <b>Quick strategy</b>
+        </div>
+
+        <div class="explain">
+          Use the backtesting engine to evaluate
+          a moving-average strategy on a price series.
+        </div>
+
+        <button
+          class="btn primary"
+          style="margin-top:14px"
+          onclick="renderBacktest()"
+        >
+          Open Backtester
+        </button>
 
       </div>
 
       <div class="card">
 
         <div class="card-title">
-          <b>Risk overview</b>
+          <b>Research tools</b>
         </div>
 
-        ${riskbar("Market beta", 72)}
-        ${riskbar("Volatility", 43)}
-        ${riskbar("Concentration", 61)}
-        ${riskbar("Drawdown", 27)}
-        ${riskbar("Liquidity", 88)}
+        <div class="explain">
+          Statistical arbitrage, Kelly sizing,
+          options pricing and regime analysis
+          are available in Quant Lab.
+        </div>
+
+        <button
+          class="btn"
+          style="margin-top:14px"
+          onclick="renderQuantLab()"
+        >
+          Open Quant Lab
+        </button>
 
       </div>
 
@@ -1146,358 +2393,401 @@ function risk() {
   `;
 }
 
-function calcKelly() {
-  const winEl = el("win");
-  const awEl = el("aw");
-  const alEl = el("al");
-  const result = el("kelly");
+/* =========================================================
+   BACKTEST
+   ========================================================= */
 
-  if (!winEl || !awEl || !alEl || !result) {
-    return;
-  }
+function renderBacktest() {
 
-  const win =
-    (Number(winEl.value) || 0) / 100;
+  const view =
+    $("view");
 
-  const avgWin =
-    (Number(awEl.value) || 0) / 100;
+  if (!view) return;
 
-  const avgLoss =
-    (Number(alEl.value) || 0) / 100;
+  view.innerHTML = `
 
-  if (avgLoss <= 0) {
-    result.innerHTML =
-      `<div class="explain">Average loss must be greater than zero.</div>`;
-    return;
-  }
-
-  const kelly =
-    win -
-    ((1 - win) * avgWin / avgLoss);
-
-  const percentage =
-    Math.max(0, kelly * 100);
-
-  result.innerHTML = `
-    <div class="hero-signal">
-
-      <div class="big positive">
-        ${percentage.toFixed(1)}%
-      </div>
-
-      <div class="sub">
-        Full Kelly estimate.
-        Real portfolios commonly use fractional Kelly.
-      </div>
-
-    </div>
-  `;
-}
-
-function portfolio() {
-  return `
     <div class="page-head">
 
       <div>
+
         <div class="eyebrow">
-          Capital allocation
+          RESEARCH
         </div>
 
-        <h1>Portfolio</h1>
+        <h1>
+          Backtesting
+        </h1>
 
         <div class="sub">
-          Simulated portfolio exposure.
+          Moving-average strategy engine.
         </div>
+
+      </div>
+
+      <div class="actions">
+
+        <button
+          class="btn"
+          onclick="renderStrategyLab()"
+        >
+          Strategy Lab
+        </button>
+
       </div>
 
     </div>
 
-    <div class="grid three">
+    <div class="grid two">
 
-      ${stat(
-        "Equity",
-        "$124,860",
-        "+2.84%",
-        "30D",
-        true
+      <div class="card">
+
+        <div class="field">
+
+          <label>
+            Historical prices
+          </label>
+
+          <textarea
+            id="bt-prices"
+            style="min-height:220px"
+          >100,101,102,103,102,105,107,106,108,110,109,112,115,114,118,120,119,123,125,124,128,130,129,132,135,137,136,140,143,145,144,148,150,149,153,155,158,157,160,162,165,164,168,170,169,172,175,177,176,180,183,185,184,188,190,193,195,194,198,200</textarea>
+
+        </div>
+
+        <div class="input-grid">
+
+          <div class="field">
+
+            <label>
+              Fast MA
+            </label>
+
+            <input
+              id="bt-fast"
+              type="number"
+              value="5"
+              min="2"
+            >
+
+          </div>
+
+          <div class="field">
+
+            <label>
+              Slow MA
+            </label>
+
+            <input
+              id="bt-slow"
+              type="number"
+              value="15"
+              min="3"
+            >
+
+          </div>
+
+          <div class="field">
+
+            <label>
+              Initial capital
+            </label>
+
+            <input
+              id="bt-capital"
+              type="number"
+              value="100000"
+            >
+
+          </div>
+
+        </div>
+
+        <button
+          class="btn primary"
+          style="margin-top:12px"
+          onclick="runBacktest()"
+        >
+          Run backtest
+        </button>
+
+      </div>
+
+      <div class="card">
+
+        <div class="card-title">
+          <b>Results</b>
+        </div>
+
+        <div id="bt-result">
+          No backtest executed.
+        </div>
+
+      </div>
+
+    </div>
+  `;
+}
+
+function runBacktest() {
+
+  const prices =
+    parseSeries(
+      $("bt-prices").value
+    );
+
+  const fast =
+    Number(
+      $("bt-fast").value
+    );
+
+  const slow =
+    Number(
+      $("bt-slow").value
+    );
+
+  const capital =
+    Number(
+      $("bt-capital").value
+    );
+
+  if (
+    fast >= slow
+  ) {
+
+    $("bt-result").innerHTML =
+      `<div class="explain">
+        Fast MA must be smaller than Slow MA.
+      </div>`;
+
+    return;
+  }
+
+  const result =
+    QuantTools.backtest({
+
+      prices,
+
+      initialCapital:
+        capital,
+
+      fastPeriod:
+        fast,
+
+      slowPeriod:
+        slow
+
+    });
+
+  if (result.error) {
+
+    $("bt-result").innerHTML =
+      `<div class="explain">
+        ${escapeHTML(result.error)}
+      </div>`;
+
+    return;
+  }
+
+  $("bt-result").innerHTML = `
+
+    <div class="metric-grid">
+
+      ${metric(
+        "Initial capital",
+        formatNumber(
+          result.initialCapital,
+          2
+        )
       )}
 
-      ${stat(
-        "Cash",
-        "$24,860",
-        "19.9%",
-        "allocation"
+      ${metric(
+        "Final equity",
+        formatNumber(
+          result.finalEquity,
+          2
+        )
       )}
 
-      ${stat(
-        "Risk score",
-        "32 / 100",
-        "Moderate",
-        "current"
+      ${metric(
+        "Total return",
+        formatPercent(
+          result.totalReturn
+        )
+      )}
+
+      ${metric(
+        "Max drawdown",
+        formatPercent(
+          result.maxDrawdown
+        )
+      )}
+
+      ${metric(
+        "Sharpe",
+        formatNumber(
+          result.sharpe,
+          2
+        )
       )}
 
     </div>
 
     <div
-      class="card"
-      style="margin-top:13px"
+      class="explain"
+      style="margin-top:14px"
     >
-
-      <div class="card-title">
-        <b>Current exposure</b>
-        <span>simulated</span>
-      </div>
-
-      ${ticker(
-        "SPY",
-        "Core equity",
-        "BUY",
-        "42%"
-      )}
-
-      ${ticker(
-        "QQQ",
-        "Technology",
-        "BUY",
-        "24%"
-      )}
-
-      ${ticker(
-        "NVDA",
-        "Semiconductor",
-        "BUY",
-        "12%"
-      )}
-
-      ${ticker(
-        "AAPL",
-        "Mega cap",
-        "WATCH",
-        "8%"
-      )}
-
+      Strategy: long when the fast moving average
+      is above the slow moving average, otherwise cash.
     </div>
   `;
 }
 
-function alerts() {
-  return `
-    <div class="page-head">
-
-      <div>
-        <div class="eyebrow">
-          Monitoring
-        </div>
-
-        <h1>Signals & Alerts</h1>
-
-        <div class="sub">
-          Model-generated market signals.
-        </div>
-      </div>
-
-    </div>
-
-    <div class="card">
-
-      ${ticker(
-        "NVDA",
-        "Momentum",
-        "BUY",
-        "91%"
-      )}
-
-      ${ticker(
-        "SPY",
-        "Regime",
-        "BUY",
-        "78%"
-      )}
-
-      ${ticker(
-        "BTC-USD",
-        "Volatility",
-        "SELL",
-        "68%"
-      )}
-
-    </div>
-  `;
-}
-
-function learn() {
-  return `
-    <div class="page-head">
-
-      <div>
-        <div class="eyebrow">
-          Education
-        </div>
-
-        <h1>Learn Mode</h1>
-
-        <div class="sub">
-          Understand the models before trusting them.
-        </div>
-      </div>
-
-    </div>
-
-    <div class="grid three">
-
-      <div class="card">
-
-        <h3>
-          Sharpe ratio
-        </h3>
-
-        <p>
-          Measures return relative to volatility.
-          Higher is generally better, but it is not a magic quality score.
-        </p>
-
-      </div>
-
-      <div class="card">
-
-        <h3>
-          Maximum drawdown
-        </h3>
-
-        <p>
-          The largest peak-to-trough decline in an equity curve.
-        </p>
-
-      </div>
-
-      <div class="card">
-
-        <h3>
-          Kelly criterion
-        </h3>
-
-        <p>
-          A position-sizing framework based on estimated edge and payoff.
-        </p>
-
-      </div>
-
-    </div>
-  `;
-}
-
-function render() {
-  const view = el("view");
-
-  if (!view) {
-    console.error(
-      "QuantForge: #view element not found."
-    );
-    return;
-  }
-
-  const pages = {
-    dashboard,
-    markets,
-    quant,
-    strategies,
-    backtest,
-    risk,
-    portfolio,
-    alerts,
-    learn
-  };
-
-  const page =
-    pages[state.view] || dashboard;
-
-  livePrices();
-
-  view.innerHTML = page();
-
-  nav();
-
-  requestAnimationFrame(() => {
-
-    if (state.view === "dashboard") {
-      drawChart(
-        "mainChart",
-        state.prices
-      );
-    }
-
-    if (state.view === "markets") {
-      drawChart(
-        "marketChart",
-        state.prices
-      );
-    }
-
-  });
-}
+/* =========================================================
+   INITIALIZATION
+   ========================================================= */
 
 function init() {
-  console.log(
-    "QuantForge initialized"
-  );
 
-  state.prices =
-    seedPrices();
+  if (
+    !window.QuantTools
+  ) {
+    console.error(
+      "QuantTools was not loaded."
+    );
 
-  render();
+    toast(
+      "QuantTools engine not loaded."
+    );
+  }
 
-  setInterval(() => {
+  /*
+   * If the existing HTML already contains
+   * a dashboard, we do not destroy it.
+   *
+   * Otherwise render our dashboard.
+   */
 
-    livePrices();
+  const view =
+    $("view");
 
-    if (
-      state.view === "dashboard" ||
-      state.view === "markets"
-    ) {
-      const chartId =
-        state.view === "dashboard"
-          ? "mainChart"
-          : "marketChart";
-
-      drawChart(
-        chartId,
-        state.prices
-      );
-    }
-
-  }, 2000);
+  if (
+    view &&
+    view.innerHTML.trim() === ""
+  ) {
+    renderDashboard();
+  }
 }
 
-window.addEventListener(
-  "resize",
-  () => {
+/* =========================================================
+   GLOBAL EXPORTS
+   ========================================================= */
 
-    if (state.view === "dashboard") {
-      drawChart(
-        "mainChart",
-        state.prices
-      );
-    }
+window.go =
+  go;
 
-    if (state.view === "markets") {
-      drawChart(
-        "marketChart",
-        state.prices
-      );
-    }
+window.openModule =
+  openModule;
 
-  }
-);
+window.renderDashboard =
+  renderDashboard;
 
-window.go = go;
-window.toast = toast;
-window.openModule = openModule;
-window.analyzeStrategy = analyzeStrategy;
-window.runBacktest = runBacktest;
-window.calcKelly = calcKelly;
+window.renderQuantLab =
+  renderQuantLab;
+
+window.renderRiskEngine =
+  renderRiskEngine;
+
+window.renderStrategyLab =
+  renderStrategyLab;
+
+window.renderBacktest =
+  renderBacktest;
+
+window.kellyTool =
+  kellyTool;
+
+window.calculateKellyTool =
+  calculateKellyTool;
+
+window.blackScholesTool =
+  blackScholesTool;
+
+window.calculateBlackScholes =
+  calculateBlackScholes;
+
+window.monteCarloTool =
+  monteCarloTool;
+
+window.calculateMonteCarlo =
+  calculateMonteCarlo;
+
+window.statisticalArbitrageTool =
+  statisticalArbitrageTool;
+
+window.calculateStatArb =
+  calculateStatArb;
+
+window.engleGrangerTool =
+  engleGrangerTool;
+
+window.calculateEG =
+  calculateEG;
+
+window.markovTool =
+  markovTool;
+
+window.calculateMarkov =
+  calculateMarkov;
+
+window.sentimentTool =
+  sentimentTool;
+
+window.calculateSentiment =
+  calculateSentiment;
+
+window.factorTool =
+  factorTool;
+
+window.calculateFactors =
+  calculateFactors;
+
+window.babTool =
+  babTool;
+
+window.calculateBAB =
+  calculateBAB;
+
+window.asymmetricTool =
+  asymmetricTool;
+
+window.calculateAsymmetric =
+  calculateAsymmetric;
+
+window.correlationTool =
+  correlationTool;
+
+window.calculateCorrelation =
+  calculateCorrelation;
+
+window.insiderTool =
+  insiderTool;
+
+window.calculateInsider =
+  calculateInsider;
+
+window.calculateRisk =
+  calculateRisk;
+
+window.runBacktest =
+  runBacktest;
+
+/* =========================================================
+   START
+   ========================================================= */
 
 if (
-  document.readyState === "loading"
+  document.readyState ===
+  "loading"
 ) {
   document.addEventListener(
     "DOMContentLoaded",
