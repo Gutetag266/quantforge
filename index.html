@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#070b14" />
+  <title>QuantForge — Quant Trading Terminal</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">Q</div>
+        <div><b>QuantForge</b><span>Trading Intelligence</span></div>
+      </div>
+      <div class="live-pill"><i></i> MARKET SIMULATION LIVE</div>
+      <nav id="nav"></nav>
+      <div class="sidebar-bottom">
+        <div class="mini-card">
+          <span>System health</span><strong>98.7%</strong>
+          <div class="progress"><i style="width:98.7%"></i></div>
+        </div>
+        <div class="mini-user">◉ <span>Quant workspace</span></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="mobile-brand">Q QuantForge</div>
+        <div class="search">⌕ <input id="globalSearch" placeholder="Search ticker, strategy, module..." /></div>
+        <div class="top-actions">
+          <button class="icon-btn" id="themeBtn">◐</button>
+          <button class="icon-btn">🔔</button>
+          <button class="avatar">F</button>
+        </div>
+      </header>
+
+      <section class="content">
+        <div id="view"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast"></div>
+  <script src="quant-tools.js"></script>
+<script src="market-data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
