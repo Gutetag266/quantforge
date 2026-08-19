@@ -191,6 +191,88 @@
   }
 
   /* =========================
+     INTRADAY HISTORY (closer to "live")
+     ========================= */
+
+  async function getIntradaySeries(symbol, interval) {
+    const data = await fetchJSON({
+      function: "TIME_SERIES_INTRADAY",
+      symbol: symbol,
+      interval: interval || "5min",
+      outputsize: "compact"
+    });
+
+    const key = "Time Series (" + (interval || "5min") + ")";
+    const series = data[key];
+
+    if (!series) {
+      throw new Error("No intraday data available for " + symbol + ".");
+    }
+
+    const timestamps = Object.keys(series).sort();
+
+    return timestamps.map((ts) => {
+      const bar = series[ts];
+
+      return {
+        date: ts,
+        open: Number(bar["1. open"]),
+        high: Number(bar["2. high"]),
+        low: Number(bar["3. low"]),
+        close: Number(bar["4. close"]),
+        volume: Number(bar["5. volume"])
+      };
+    });
+  }
+
+  /* =========================
+     CRYPTO DAILY HISTORY
+     ========================= */
+
+  async function getCryptoDailySeries(symbol, market) {
+    const data = await fetchJSON({
+      function: "DIGITAL_CURRENCY_DAILY",
+      symbol: symbol,
+      market: market || "USD"
+    });
+
+    const series =
+      data["Time Series (Digital Currency Daily)"];
+
+    if (!series) {
+      throw new Error("No crypto data available for " + symbol + ".");
+    }
+
+    const dates = Object.keys(series).sort();
+
+    /* Alpha Vantage has used a couple of different field-name
+       formats for this endpoint over time — try the known
+       variants defensively instead of assuming one shape. */
+
+    function pick(day, keys) {
+      for (const k of keys) {
+        if (day[k] !== undefined) {
+          return Number(day[k]);
+        }
+      }
+      return NaN;
+    }
+
+    return dates.map((date) => {
+      const day = series[date];
+
+      return {
+        date: date,
+        open: pick(day, ["1a. open (USD)", "1. open"]),
+        high: pick(day, ["2a. high (USD)", "2. high"]),
+        low: pick(day, ["3a. low (USD)", "3. low"]),
+        close: pick(day, ["4a. close (USD)", "4. close"]),
+        volume: pick(day, ["5. volume"])
+      };
+    }).filter((day) => Number.isFinite(day.close));
+  }
+
+  /* =========================
      PUBLIC API
      ========================= */
 
@@ -201,6 +283,8 @@
     hasApiKey,
     searchSymbol,
     getQuote,
-    getDailySeries
+    getDailySeries,
+    getIntradaySeries,
+    getCryptoDailySeries
   };
 })(window);

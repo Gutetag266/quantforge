@@ -7,9 +7,11 @@ background. No installation, no backend (yet) — open `index.html` and go.
 ## What's inside
 
 - **Dashboard** — overview of the workspace.
-- **Markets** — real, live prices and price history, pulled from the
-  [Alpha Vantage](https://www.alphavantage.co) API using your own free
-  API key.
+- **Markets** — real, live prices, candlestick charts (daily and
+  5-minute intraday) and quick-pick instruments (popular stocks and
+  crypto), pulled from the [Alpha Vantage](https://www.alphavantage.co)
+  API using your own free API key. Optional "live updates" mode
+  refreshes the current symbol automatically.
 - **Quant Lab** — a set of self-contained models: Kelly Criterion,
   Black-Scholes options pricing, Monte Carlo simulation, statistical
   arbitrage / pairs trading, Engle-Granger cointegration, Markov regime
@@ -21,8 +23,10 @@ background. No installation, no backend (yet) — open `index.html` and go.
 
 All of the math lives in `quant-tools.js`, a dependency-free JavaScript
 module (`window.QuantTools`). All of the market data access lives in
-`market-data.js` (`window.MarketData`). The UI in `app.js` just wires
-buttons to those two engines.
+`market-data.js` (`window.MarketData`). Candlestick charts use
+[TradingView Lightweight Charts](https://github.com/tradingview/lightweight-charts)
+loaded from a CDN — the only external dependency in the project. The
+UI in `app.js` wires buttons to these engines.
 
 ## Getting real market data
 

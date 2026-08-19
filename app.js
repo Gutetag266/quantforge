@@ -189,6 +189,10 @@ function go(page) {
 
   setActiveNav(page || "dashboard");
 
+  if (page !== "markets") {
+    stopLiveRefresh();
+  }
+
   if (page === "quant") {
     renderQuantLab();
     return;
@@ -2477,6 +2481,131 @@ function renderStrategyLab() {
 
 let lastLoadedSeries = null;
 let lastLoadedSymbol = null;
+let currentInstrumentType = "stock";
+let currentTimeframe = "daily";
+let candleChart = null;
+let candleSeries = null;
+let liveRefreshTimer = null;
+
+const instrumentPresets = [
+  ["AAPL", "Apple", "stock"],
+  ["MSFT", "Microsoft", "stock"],
+  ["NVDA", "Nvidia", "stock"],
+  ["TSLA", "Tesla", "stock"],
+  ["GOOGL", "Alphabet", "stock"],
+  ["AMZN", "Amazon", "stock"],
+  ["BTC", "Bitcoin", "crypto"],
+  ["ETH", "Ethereum", "crypto"]
+];
+
+function ensureCandleChart() {
+
+  const container =
+    $("mk-candles");
+
+  if (!container) return null;
+
+  if (
+    !window.LightweightCharts
+  ) {
+    container.innerHTML =
+      `<div class="explain">Chart library failed to load (check your internet connection).</div>`;
+    return null;
+  }
+
+  if (candleChart) {
+    candleChart.remove();
+    candleChart = null;
+    candleSeries = null;
+  }
+
+  container.innerHTML = "";
+
+  candleChart =
+    LightweightCharts.createChart(
+      container,
+      {
+        height: 340,
+        layout: {
+          background: { color: "transparent" },
+          textColor: "#8b97a8"
+        },
+        grid: {
+          vertLines: { color: "#141d2b" },
+          horzLines: { color: "#141d2b" }
+        },
+        rightPriceScale: {
+          borderColor: "#1e2937"
+        },
+        timeScale: {
+          borderColor: "#1e2937"
+        }
+      }
+    );
+
+  candleSeries =
+    candleChart.addCandlestickSeries({
+      upColor: "#3ddc97",
+      downColor: "#ff6b6b",
+      borderVisible: false,
+      wickUpColor: "#3ddc97",
+      wickDownColor: "#ff6b6b"
+    });
+
+  new ResizeObserver(() => {
+    if (candleChart) {
+      candleChart.applyOptions({
+        width: container.clientWidth
+      });
+    }
+  }).observe(container);
+
+  return candleSeries;
+}
+
+function toChartTime(dateString, intraday) {
+
+  if (!intraday) {
+    return dateString;
+  }
+
+  return Math.floor(
+    Date.parse(
+      dateString.replace(" ", "T") + "Z"
+    ) / 1000
+  );
+}
+
+function renderCandles(bars, intraday) {
+
+  const series =
+    ensureCandleChart();
+
+  if (!series) return;
+
+  const candleData =
+    bars
+      .filter(
+        (bar) =>
+          Number.isFinite(bar.open) &&
+          Number.isFinite(bar.high) &&
+          Number.isFinite(bar.low) &&
+          Number.isFinite(bar.close)
+      )
+      .map((bar) => ({
+        time: toChartTime(bar.date, intraday),
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.close
+      }));
+
+  series.setData(candleData);
+
+  if (candleChart) {
+    candleChart.timeScale().fitContent();
+  }
+}
 
 function sparklineSVG(closes) {
 
@@ -2686,6 +2815,37 @@ function renderMarkets() {
 
     </div>
 
+    <div class="card" style="margin-top:16px">
+
+      <div class="card-title">
+        <b>Popular instruments</b>
+        <span>Quick pick</span>
+      </div>
+
+      <div class="explain">
+        No idea where to start? Click one of these — they're
+        some of the most-watched stocks and cryptocurrencies.
+      </div>
+
+      <div
+        class="actions"
+        style="margin-top:10px;flex-wrap:wrap"
+      >
+        ${instrumentPresets.map(
+          ([symbol, name, type]) => `
+            <button
+              class="btn"
+              onclick="loadMarketQuote('${symbol}', '${type}')"
+            >
+              ${escapeHTML(symbol)}
+              <span style="opacity:.6"> · ${escapeHTML(name)}</span>
+            </button>
+          `
+        ).join("")}
+      </div>
+
+    </div>
+
     <div
       class="grid two"
       style="margin-top:16px"
@@ -2717,6 +2877,17 @@ function renderMarkets() {
             >
           </div>
 
+          <div class="field">
+            <label>
+              Instrument type
+            </label>
+
+            <select id="mk-type">
+              <option value="stock">Stock</option>
+              <option value="crypto">Crypto</option>
+            </select>
+          </div>
+
         </div>
 
         <div class="actions" style="margin-top:10px">
@@ -2725,7 +2896,7 @@ function renderMarkets() {
             class="btn primary"
             onclick="loadMarketQuote()"
           >
-            Load quote + history
+            Load quote + chart
           </button>
 
           <button
@@ -2737,17 +2908,57 @@ function renderMarkets() {
             Use in Backtester →
           </button>
 
+          <button
+            class="btn"
+            id="mk-live-toggle"
+            onclick="toggleLiveRefresh()"
+            disabled
+          >
+            ▶ Start live updates
+          </button>
+
         </div>
 
         <div
-          id="mk-chart"
-          style="margin-top:16px"
+          class="actions"
+          style="margin-top:10px"
+        >
+
+          <button
+            class="btn ${currentTimeframe === "daily" ? "primary" : ""}"
+            data-timeframe="daily"
+            onclick="setTimeframe('daily')"
+          >
+            Daily
+          </button>
+
+          <button
+            class="btn ${currentTimeframe === "intraday" ? "primary" : ""}"
+            data-timeframe="intraday"
+            onclick="setTimeframe('intraday')"
+          >
+            Intraday (5 min)
+          </button>
+
+        </div>
+
+        <div
+          id="mk-chart-note"
+          class="explain"
+          style="margin-top:10px"
+        ></div>
+
+        <div
+          id="mk-candles"
+          style="margin-top:10px"
         ></div>
 
       </div>
 
     </div>
   `;
+
+  setActiveNav("markets");
 }
 
 function saveMarketApiKey() {
@@ -2827,10 +3038,13 @@ async function searchMarketSymbol() {
   }
 }
 
-async function loadMarketQuote(symbolArg) {
+async function loadMarketQuote(symbolArg, typeArg) {
 
   const symbolInput =
     $("mk-symbol");
+
+  const typeSelect =
+    $("mk-type");
 
   const symbol =
     (symbolArg || symbolInput.value || "")
@@ -2842,7 +3056,16 @@ async function loadMarketQuote(symbolArg) {
     return;
   }
 
+  currentInstrumentType =
+    typeArg ||
+    (typeSelect ? typeSelect.value : "stock");
+
   symbolInput.value = symbol;
+
+  if (typeSelect) {
+    typeSelect.value =
+      currentInstrumentType;
+  }
 
   $("mk-quote-symbol").textContent =
     symbol;
@@ -2850,112 +3073,270 @@ async function loadMarketQuote(symbolArg) {
   $("mk-quote-result").innerHTML =
     `<div class="explain">Loading live quote…</div>`;
 
-  $("mk-chart").innerHTML = "";
+  $("mk-chart-note").textContent = "";
 
   $("mk-use-backtest").disabled = true;
 
+  $("mk-live-toggle").disabled = true;
+
+  stopLiveRefresh();
+
   try {
 
-    const quote =
-      await MarketData.getQuote(
-        symbol
-      );
+    if (currentInstrumentType === "crypto") {
 
-    const changeColor =
-      quote.change >= 0
-        ? "#3ddc97"
-        : "#ff6b6b";
+      await loadCryptoQuoteAndChart(symbol);
 
-    $("mk-quote-result").innerHTML = `
+    } else {
 
-      <div class="metric-grid">
+      await loadStockQuoteAndChart(symbol);
+    }
 
-        ${metric(
-          "Price",
-          formatNumber(quote.price, 2)
-        )}
-
-        ${metric(
-          "Change",
-          (
-            quote.change >= 0
-              ? "+"
-              : ""
-          ) +
-            formatNumber(quote.change, 2) +
-            " (" +
-            formatNumber(quote.changePercent, 2) +
-            "%)"
-        )}
-
-        ${metric(
-          "Previous close",
-          formatNumber(quote.previousClose, 2)
-        )}
-
-        ${metric(
-          "Day range",
-          formatNumber(quote.low, 2) +
-            " – " +
-            formatNumber(quote.high, 2)
-        )}
-
-        ${metric(
-          "Volume",
-          formatNumber(quote.volume, 0)
-        )}
-
-        ${metric(
-          "As of",
-          quote.latestTradingDay || "—"
-        )}
-
-      </div>
-
-      <div
-        class="explain"
-        style="margin-top:10px;color:${changeColor}"
-      >
-        ${
-          quote.change >= 0
-            ? "Trading above yesterday's close."
-            : "Trading below yesterday's close."
-        }
-      </div>
-    `;
-
-    $("mk-chart").innerHTML =
-      `<div class="explain" style="margin-bottom:8px">Loading price history…</div>`;
-
-    const history =
-      await MarketData.getDailySeries(
-        symbol,
-        "compact"
-      );
-
-    const closes =
-      history.map(
-        (day) => day.close
-      );
-
-    lastLoadedSeries = closes;
     lastLoadedSymbol = symbol;
 
-    $("mk-chart").innerHTML = `
-      <div class="explain" style="margin-bottom:6px">
-        Last ${closes.length} trading days (closing price)
-      </div>
-      ${sparklineSVG(closes)}
-    `;
-
     $("mk-use-backtest").disabled = false;
+    $("mk-live-toggle").disabled = false;
 
   } catch (err) {
 
     $("mk-quote-result").innerHTML =
       `<div class="explain">${escapeHTML(err.message)}</div>`;
+  }
+}
 
-    $("mk-chart").innerHTML = "";
+async function loadStockQuoteAndChart(symbol) {
+
+  const quote =
+    await MarketData.getQuote(
+      symbol
+    );
+
+  renderQuoteCard(quote);
+
+  await loadChartForTimeframe(
+    symbol,
+    "stock"
+  );
+}
+
+async function loadCryptoQuoteAndChart(symbol) {
+
+  $("mk-chart-note").textContent =
+    "Crypto uses daily bars — intraday isn't available on the free tier.";
+
+  const history =
+    await MarketData.getCryptoDailySeries(
+      symbol,
+      "USD"
+    );
+
+  if (history.length < 2) {
+    throw new Error("Not enough crypto history returned for " + symbol + ".");
+  }
+
+  const latest =
+    history[history.length - 1];
+
+  const previous =
+    history[history.length - 2];
+
+  const change =
+    latest.close - previous.close;
+
+  const changePercent =
+    (change / previous.close) * 100;
+
+  renderQuoteCard({
+    price: latest.close,
+    change: change,
+    changePercent: changePercent,
+    previousClose: previous.close,
+    low: latest.low,
+    high: latest.high,
+    volume: latest.volume,
+    latestTradingDay: latest.date
+  });
+
+  lastLoadedSeries =
+    history.map(
+      (day) => day.close
+    );
+
+  renderCandles(history, false);
+}
+
+function renderQuoteCard(quote) {
+
+  const changeColor =
+    quote.change >= 0
+      ? "#3ddc97"
+      : "#ff6b6b";
+
+  $("mk-quote-result").innerHTML = `
+
+    <div class="metric-grid">
+
+      ${metric(
+        "Price",
+        formatNumber(quote.price, 2)
+      )}
+
+      ${metric(
+        "Change",
+        (
+          quote.change >= 0
+            ? "+"
+            : ""
+        ) +
+          formatNumber(quote.change, 2) +
+          " (" +
+          formatNumber(quote.changePercent, 2) +
+          "%)"
+      )}
+
+      ${metric(
+        "Previous close",
+        formatNumber(quote.previousClose, 2)
+      )}
+
+      ${metric(
+        "Range",
+        formatNumber(quote.low, 2) +
+          " – " +
+          formatNumber(quote.high, 2)
+      )}
+
+      ${metric(
+        "Volume",
+        formatNumber(quote.volume, 0)
+      )}
+
+      ${metric(
+        "As of",
+        quote.latestTradingDay || "—"
+      )}
+
+    </div>
+
+    <div
+      class="explain"
+      style="margin-top:10px;color:${changeColor}"
+    >
+      ${
+        quote.change >= 0
+          ? "Trading above the previous close."
+          : "Trading below the previous close."
+      }
+    </div>
+  `;
+}
+
+async function loadChartForTimeframe(symbol, instrumentType) {
+
+  if (instrumentType === "crypto") {
+    /* crypto chart already rendered in loadCryptoQuoteAndChart */
+    return;
+  }
+
+  $("mk-chart-note").textContent =
+    currentTimeframe === "intraday"
+      ? "5-minute bars, exchange local time. Free-tier data can lag a few minutes behind the real market."
+      : "Daily candles (last ~100 trading days).";
+
+  const bars =
+    currentTimeframe === "intraday"
+      ? await MarketData.getIntradaySeries(symbol, "5min")
+      : await MarketData.getDailySeries(symbol, "compact");
+
+  lastLoadedSeries =
+    bars.map(
+      (bar) => bar.close
+    );
+
+  renderCandles(
+    bars,
+    currentTimeframe === "intraday"
+  );
+}
+
+function setTimeframe(timeframe) {
+
+  if (timeframe === currentTimeframe) {
+    return;
+  }
+
+  currentTimeframe = timeframe;
+
+  document
+    .querySelectorAll("[data-timeframe]")
+    .forEach((btn) => {
+      btn.classList.toggle(
+        "primary",
+        btn.dataset.timeframe === timeframe
+      );
+    });
+
+  if (
+    lastLoadedSymbol &&
+    currentInstrumentType === "stock"
+  ) {
+    loadChartForTimeframe(
+      lastLoadedSymbol,
+      currentInstrumentType
+    );
+  }
+}
+
+function toggleLiveRefresh() {
+
+  const button =
+    $("mk-live-toggle");
+
+  if (liveRefreshTimer) {
+    stopLiveRefresh();
+    button.textContent =
+      "▶ Start live updates";
+    toast("Live updates stopped.");
+    return;
+  }
+
+  if (!lastLoadedSymbol) {
+    toast("Load a symbol first.");
+    return;
+  }
+
+  toast(
+    "Live updates on — refreshing every 60s. " +
+    "Free API keys have a daily request limit, so use this sparingly."
+  );
+
+  button.textContent =
+    "■ Stop live updates";
+
+  liveRefreshTimer = setInterval(
+    () => {
+      loadMarketQuote(
+        lastLoadedSymbol,
+        currentInstrumentType
+      );
+    },
+    60000
+  );
+}
+
+function stopLiveRefresh() {
+
+  if (liveRefreshTimer) {
+    clearInterval(liveRefreshTimer);
+    liveRefreshTimer = null;
+  }
+
+  const button =
+    $("mk-live-toggle");
+
+  if (button) {
+    button.textContent =
+      "▶ Start live updates";
   }
 }
 
@@ -3338,6 +3719,12 @@ window.searchMarketSymbol =
 
 window.loadMarketQuote =
   loadMarketQuote;
+
+window.setTimeframe =
+  setTimeframe;
+
+window.toggleLiveRefresh =
+  toggleLiveRefresh;
 
 window.sendSeriesToBacktest =
   sendSeriesToBacktest;
